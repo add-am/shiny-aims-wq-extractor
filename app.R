@@ -371,22 +371,52 @@ server <- function(input, output){
     if (input$DailyValues){
 
       #create a simple plot
-      ggplot(aggregate_user_data(), aes(x = Date, y = Concentration, group = Indicator, colour = Logger)) +
+      p <- ggplot(aggregate_user_data(), aes(x = Date, y = Concentration, colour = Logger)) +
         geom_line() +
-        facet_wrap(vars(Indicator)) +
-        xlab("Date") +
-        ylab("")
-        theme_bw()
+        facet_wrap(
+          ~ Indicator, 
+          ncol = 1, 
+          scales = "free_y",
+          labeller = as_labeller(c(Chlorophyll = "Chlorophyll Concentration (mg/m-3)", Turbidity = "Turbidity (NTU)")), 
+          strip.position = "top"
+        ) +
+        labs(y = NULL) +
+        theme_bw() +
+        theme(strip.background = element_blank(), strip.placement = "outside")
 
     } else { #set x axis to DateTime
 
       #create a simple plot
-      ggplot(aggregate_user_data(), aes(x = DateTime, y = Concentration, group = Indicator, colour = Logger)) +
+      p <- ggplot(aggregate_user_data(), aes(x = DateTime, y = Concentration, colour = Logger)) +
         geom_line() +
-        facet_wrap(vars(Indicator)) +
-        theme_bw()
-      
+        facet_wrap(
+          ~ Indicator, 
+          ncol = 1, 
+          scales = "free_y",
+          labeller = as_labeller(c(Chlorophyll = "Chlorophyll Concentration (mg/m-3)", Turbidity = "Turbidity (NTU)")), 
+          strip.position = "top"
+        ) +
+        labs(y = NULL) +
+        theme_bw() +
+        theme(strip.background = element_blank(), strip.placement = "outside")
+
+            #create a simple plot
+      p <- ggplot(final_df, aes(x = DateTime, y = Concentration, colour = Logger)) +
+        geom_line() +
+        facet_wrap(
+          ~ Indicator, 
+          ncol = 1, 
+          scales = "free_y",
+          labeller = as_labeller(c(Chlorophyll = "Chlorophyll Concentration (mg/m-3)", Turbidity = "Turbidity (NTU)")), 
+          strip.position = "top"
+        ) +
+        labs(y = NULL) +
+        theme_bw() +
+        theme(strip.background = element_blank(), strip.placement = "outside")
+
     }
+
+    ggplotly(p)
   })
 
   #download button  
