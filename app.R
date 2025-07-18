@@ -1,6 +1,7 @@
 #load libraries
 library(shiny)
 library(bslib)
+library(openxlsx2)
 library(leaflet)
 library(plotly)
 library(purrr)
@@ -11,6 +12,8 @@ library(stringr)
 library(lubridate)
 library(dplyr)
 library(tidyr)
+library(readr)
+
 
 #build the UI that the user will see and interact with
 ui <- page_navbar(
@@ -76,7 +79,7 @@ ui <- page_navbar(
           Please note that these resources are", tags$b("not"), "required to access or use the data:"
         ),
         tags$ul(
-          tags$li("A document detailing R methods can be found here: [link tbd], this includes:",
+          tags$li("A document detailing R methods can be found here: ", tags$a(href = "n3_water-quality_new-mmp-data.html", target = "_blank", "Data Access Methods."),"This includes:",
             tags$ul(
               tags$li("How to find data,"),
               tags$li("Methods to learn about data type and quality,"),
@@ -128,27 +131,21 @@ ui <- page_navbar(
         ),
 
         #choose which data flags to keep
-        checkboxGroupInput(
-          "DataFlagsKept",
-          "Choose which data flags to keep (select to keep):",
-          c(
-            "0: No_QC_performed" = 0,
-            "1: Good_data" = 1,
-            "2: Probably_good_data" = 2,
-            "3: Bad_data_that_are_potentially_correctable" = 3,
-            "4: Bad_data" = 4,
-            "5: Value_changed" = 5
+        tooltip(
+          checkboxGroupInput(
+            "DataFlagsKept",
+            "Choose which data flags to keep (select to keep):",
+            c(0,1,2,3,4,5),
+            selected = c(1,2)
           ),
-          selected = c(
-            "1: Good_data" = 1,
-            "2: Probably_good_data" = 2
-          )
+          "0 =  No_QC_performed \n1 = Good_data \n2 = Probably_good_data \n3 = Bad_data_that_are_potentially_correctable \n4 = Bad_data \n5 = Value_changed",
+          placement = "right"
         ),
 
         #let the user decide if they want to aggregate to daily mean values
         input_switch(
           "DailyValues", 
-          "Do you want to aggregate to daily values? (Yes by default)",
+          "Aggregate to daily values?",
           value = TRUE
         )
       ),
@@ -186,108 +183,126 @@ server <- function(input, output){
   #craft the correct url for the desired logger * year combo
   return_user_data <- reactive({
 
-    #access the year(s) that the user requested
-    target_years <- input$SelectedYears
+    withProgress( 
+      message = 'Accessing Data', 
+      detail = 'This may take a while...', 
+      value = 0, {
 
-    #access the logger name(s) that the user requested
-    target_loggers <- input$SelectedLoggers
+      #access the year(s) that the user requested
+      target_years <- input$SelectedYears
 
-    #create a pairwise combination of the years and loggers to form the inputs for each query
-    target_matrix <- expand.grid(Years = target_years, Loggers = target_loggers)
+      #access the logger name(s) that the user requested
+      target_loggers <- input$SelectedLoggers
 
-    #map over year and logger lists to create unique urls, pull var and dim names, use this to extract data and build a df
-    retrieve_data <- pmap(target_matrix, function(Years, Loggers){
-      
-      #create a url to the catalogue in xml format, based on year(s) selected
-      catalogue_url <- glue("https://thredds.aodn.org.au/thredds/catalog/AIMS/Marine_Monitoring_Program/FLNTU_timeseries/{Years}/catalog.xml")
+      #create a pairwise combination of the years and loggers to form the inputs for each query
+      target_matrix <- expand.grid(Years = target_years, Loggers = target_loggers)
 
-      #open the url as an object in R
-      catalogue <- read_html(catalogue_url)
+      #map over year and logger lists to create unique urls, pull var and dim names, use this to extract data and build a df
+      retrieve_data <- pmap(target_matrix, function(Years, Loggers){
+        
+        #create a url to the catalogue in xml format, based on year(s) selected
+        catalogue_url <- glue("https://thredds.aodn.org.au/thredds/catalog/AIMS/Marine_Monitoring_Program/FLNTU_timeseries/{Years}/catalog.xml")
 
-      #pull out the dataset variable from the raw xml
-      nc_files <- xml_find_all(catalogue, ".//dataset")
+        incProgress(0.3, detail = "Building URL")
+        Sys.sleep(0.2)
 
-      #pull out the id from this object (which is the name of each of the logger datasets)
-      file_names <- xml_attr(nc_files, "id")
+        #open the url as an object in R
+        catalogue <- read_html(catalogue_url)
 
-      #create a vector of logger names
-      logger_names <- str_extract_all(file_names, "_.{3,5}_(?=FV01)")
-      logger_names <- str_remove_all(unlist(logger_names), "_")
+        #pull out the dataset variable from the raw xml
+        nc_files <- xml_find_all(catalogue, ".//dataset")
 
-      #create a vector of logger deployment dates
-      logger_dates <- str_extract_all(file_names, "\\d{8}(?=Z)")
-      logger_dates <- str_remove_all(unlist(logger_dates), "_")
+        #pull out the id from this object (which is the name of each of the logger datasets)
+        file_names <- xml2::xml_attr(nc_files, "id")
 
-      #record the index for each logger name that matches what the user requested
-      logger_indicies <- which(logger_names %in% Loggers)
+        #create a vector of logger names
+        logger_names <- str_extract_all(file_names, "_.{3,5}_(?=FV01)")
+        logger_names <- str_remove_all(unlist(logger_names), "_")
 
-      #extract the logger deployment dates associated with those loggers using the index determined based on name
-      logger_dates <- logger_dates[logger_indicies]
-      
-      #build the completed url
-      completed_url <- glue("https://thredds.aodn.org.au/thredds/dodsC/AIMS/Marine_Monitoring_Program/FLNTU_timeseries/{Years}/AIMS_MMP-WQ_KUZ_{logger_dates}Z_{Loggers}_FV01_timeSeries_FLNTU.nc")
+        #create a vector of logger deployment dates
+        logger_dates <- str_extract_all(file_names, "\\d{8}(?=Z)")
+        logger_dates <- str_remove_all(unlist(logger_dates), "_")
 
-      #open the url
-      nc <- nc_open(completed_url)
+        #record the index for each logger name that matches what the user requested
+        logger_indicies <- which(logger_names %in% Loggers)
 
-      #extract all variable and dimension names
-      variable_names <- names(nc$var)
-      dimension_names <- names(nc$dim)
+        #extract the logger deployment dates associated with those loggers using the index determined based on name
+        logger_dates <- logger_dates[logger_indicies]
+        
+        #build the completed url
+        completed_url <- glue("https://thredds.aodn.org.au/thredds/dodsC/AIMS/Marine_Monitoring_Program/FLNTU_timeseries/{Years}/AIMS_MMP-WQ_KUZ_{logger_dates}Z_{Loggers}_FV01_timeSeries_FLNTU.nc")
 
-      #replace the "timeseries" variable name, with the "time dimension name
-      vec_of_data_names <- str_replace(variable_names, "TIMESERIES", dimension_names)
+        incProgress(0.5, detail = "Accessing Metadata")
+        Sys.sleep(0.2)
 
-      #map over the vector and extract the data associated with each name. Store the result in a list
-      target_data <- purrr::map(vec_of_data_names, function(x) ncvar_get(nc, x))
-      
-      #name each item in the list using the vector of variable and dimension names
-      names(target_data) <- vec_of_data_names
+        #open the url
+        nc <- nc_open(completed_url)
 
-      #extract the time vals
-      time_vals <- target_data$TIME
-      
-      #assign an origin value to our "zero", make sure it has the UTC timezone, and contains hms
-      time_origin <- ymd_hms("1950-01-01 00:00:00", tz = "UTC")
+        #extract all variable and dimension names
+        variable_names <- names(nc$var)
+        dimension_names <- names(nc$dim)
 
-      #calculate new values by converting old values to absolute time intervals (purely total seconds), then adding that to our formatted origin
-      time_vals <- time_origin + ddays(time_vals)
+        #replace the "timeseries" variable name, with the "time dimension name
+        vec_of_data_names <- str_replace(variable_names, "TIMESERIES", dimension_names)
 
-      #add 10 hours to bring time to EST
-      time_vals <- time_vals + hours(10)
+        #map over the vector and extract the data associated with each name. Store the result in a list
+        target_data <- purrr::map(vec_of_data_names, function(x) ncvar_get(nc, x))
+        
+        #name each item in the list using the vector of variable and dimension names
+        names(target_data) <- vec_of_data_names
 
-      #create a dataframe from the time, chla and turbidity values, plus their data flags
-      simple_df <- data.frame(
-        Time = time_vals, 
-        Concentration_Chlorophyll = target_data$CPHL,
-        Flags_Chlorophyll = target_data$CPHL_quality_control,
-        Concentration_Turbidity = target_data$TURB,
-        Flags_Turbidity = target_data$TURB_quality_control,
-        Latitude = target_data$LATITUDE,
-        Longitude = target_data$LONGITUDE
-      )
+        #extract the time vals
+        time_vals <- target_data$TIME
+        
+        #assign an origin value to our "zero", make sure it has the UTC timezone, and contains hms
+        time_origin <- ymd_hms("1950-01-01 00:00:00", tz = "UTC")
 
-      #add columns that track the year and logger to the csv
-      simple_df <- simple_df |> 
-        mutate(Logger = Loggers,
-               Year = Years)
-      
-      #pivot the data longer, stacking turb and chla, and their flags
-      pivot_df <- simple_df |> 
-        pivot_longer(cols = c(Concentration_Chlorophyll, Flags_Chlorophyll, Concentration_Turbidity, Flags_Turbidity),
-                     names_to = c(".value", "Indicator"),
-                     names_pattern = "(.*)_(.*)")
-      
+        #calculate new values by converting old values to absolute time intervals (purely total seconds), then adding that to our formatted origin
+        time_vals <- time_origin + ddays(time_vals)
 
-      #return the df as an element in the over arching list
-      return(pivot_df)
+        #add 10 hours to bring time to EST
+        time_vals <- time_vals + hours(10)
 
+        #create a dataframe from the time, chla and turbidity values, plus their data flags
+        simple_df <- data.frame(
+          Time = time_vals, 
+          Concentration_Chlorophyll = target_data$CPHL,
+          Flags_Chlorophyll = target_data$CPHL_quality_control,
+          Concentration_Turbidity = target_data$TURB,
+          Flags_Turbidity = target_data$TURB_quality_control,
+          Latitude = target_data$LATITUDE,
+          Longitude = target_data$LONGITUDE
+        )
+
+        incProgress(0.7, detail = "Constructing Table")
+        Sys.sleep(0.2)
+
+        #add columns that track the year logger to the csv, plus the units for each variable
+        simple_df <- simple_df |> 
+          mutate(Logger = Loggers,
+                Year = Years,
+                Units_Chlorophyll = nc$var$CPHL$units,
+                Units_Turbidity = "NTU")
+        
+        #pivot the data longer, stacking turb and chla, and their flags
+        pivot_df <- simple_df |> 
+          pivot_longer(cols = c(Concentration_Chlorophyll, Flags_Chlorophyll, Units_Chlorophyll, Concentration_Turbidity, Flags_Turbidity, Units_Turbidity),
+                      names_to = c(".value", "Indicator"),
+                      names_pattern = "(.*)_(.*)")
+        
+
+        #return the df as an element in the over arching list
+        return(pivot_df)
+
+      })
+
+      #combine the list of dataframes into one large dataframe
+      final_df <- bind_rows(retrieve_data)
+
+      #return this single df as the final output of the reactive function
+      return(final_df)
+        
     })
-
-    #combine the list of dataframes into one large dataframe
-    final_df <- bind_rows(retrieve_data, .id = "column_label")
-
-    #return this single df as the final output of the reactive function
-    return(final_df)
 
   })
 
@@ -303,6 +318,34 @@ server <- function(input, output){
     
     #return the filtered data
     return(data_filtered)
+  })
+
+   #if the user wants to aggregate data, do that
+  aggregate_user_data <- reactive({
+
+    #pull data from previous func
+    data <- filtered_user_data()
+
+    #pull out date values (i.e. separate time and day)
+    data <- data |> 
+      rename(DateTime = Time) |> 
+      separate_wider_delim(cols = DateTime, delim = " ", names = c("Date", "Time"), cols_remove = FALSE) |> 
+      mutate(Date = ymd(Date),
+             Time = hms(Time))
+
+    #if switch is true, aggregate, otherwise do nothing
+    if(input$DailyValues){
+
+      #group by date and summarise
+      data <- data |> 
+        group_by(Date, Latitude, Longitude, Logger, Indicator, Units) |> 
+        summarise(Concentration = mean(Concentration, na.rm = T),
+                  Flags = as.numeric(paste(unique(Flags), collapse = ", ")))
+    }
+    
+    #return the aggregated data
+    return(data)
+
   })
 
   #create map
@@ -333,33 +376,6 @@ server <- function(input, output){
 
     #return the map
     base_map
-  })
-
-  #if the user wants to aggregate data, do that
-  aggregate_user_data <- reactive({
-
-    #pull data from previous func
-    data <- filtered_user_data()
-
-    #pull out date values (i.e. separate time and day)
-    data <- data |> 
-      rename(DateTime = Time) |> 
-      separate_wider_delim(cols = DateTime, delim = " ", names = c("Date", "Time"), cols_remove = FALSE) |> 
-      mutate(Date = ymd(Date),
-             Time = hms(Time))
-
-    #if switch is true, aggregate, otherwise do nothing
-    if(input$DailyValues){
-
-      #group by date and summarise
-      data <- data |> 
-        group_by(Date, Logger, Indicator) |> 
-        summarise(Concentration = mean(Concentration, na.rm = T))
-    }
-    
-    #return the aggregated data
-    return(data)
-
   })
 
   #create plot
@@ -400,26 +416,60 @@ server <- function(input, output){
         theme_bw() +
         theme(strip.background = element_blank(), strip.placement = "outside")
 
-            #create a simple plot
-      p <- ggplot(final_df, aes(x = DateTime, y = Concentration, colour = Logger)) +
-        geom_line() +
-        facet_wrap(
-          ~ Indicator, 
-          ncol = 1, 
-          scales = "free_y",
-          labeller = as_labeller(c(Chlorophyll = "Chlorophyll Concentration (mg/m-3)", Turbidity = "Turbidity (NTU)")), 
-          strip.position = "top"
-        ) +
-        labs(y = NULL) +
-        theme_bw() +
-        theme(strip.background = element_blank(), strip.placement = "outside")
-
     }
 
     ggplotly(p)
   })
 
-  #download button  
+  #link the data to the download button
+  output$DownloadData <- downloadHandler(
+    filename = function() {
+      
+      #get all logger names and collapse into single string separated by a dash
+      log_name <- paste(input$SelectedLoggers, collapse = "-")
+
+      #get all logger dates and collapse into single string separated by a dash
+      log_date <- paste(input$SelectedYears, collapse = "-")
+
+      #combine name and logger into a single file name
+      file_name <- paste0(paste(log_name, log_date, collapse = "_"), ".xlsx")
+
+      #return the file name as the final output for the function
+      return(file_name)
+    },
+    
+    #takes a file path, and writes an object to that path
+    content = function(file){
+
+      #translate T/F to human readable
+      if (input$DailyValues) {day_ag <- "Daily"} else {day_ag <- "10-minute intervals"}
+      
+      #build a dataframe the contains a record of metadata changes
+      metadata <- data.frame(
+        Key = c(
+          "Date Accessed:", 
+          "Data Aggregation:", 
+          "Flags Kept:", 
+          "Loggers Accessed:", 
+          "Years Requested:"),
+        Value = c(
+          as.character(Sys.Date()), 
+          day_ag, 
+          paste(input$DataFlagsKept, collapse = ", "),
+          paste(input$SelectedLoggers, collapse = ", "),
+          paste(input$SelectedYears, collapse = ", ")
+        )
+      )
+
+      wb <- wb_workbook() |> 
+        wb_add_worksheet("Metadata") |> 
+        wb_add_worksheet("Data") |> 
+        wb_add_data("Metadata", metadata) |> 
+        wb_add_data("Data", aggregate_user_data())
+
+      wb_save(wb, file)
+
+  })  
 
 }
 

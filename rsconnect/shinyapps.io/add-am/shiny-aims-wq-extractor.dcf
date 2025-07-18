@@ -1,0 +1,10 @@
+name: shiny-aims-wq-extractor
+title:
+username: add-am
+account: add-am
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15092426
+bundleId: 10634838
+url: https://add-am.shinyapps.io/shiny-aims-wq-extractor/
+version: 1
