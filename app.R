@@ -37,7 +37,7 @@ ui <- page_navbar(
 
     #define the layout of this nav panel
     layout_columns(
-      card(
+      card(#this contains the HWP logo
         style = "
           display: flex;
           justify-content: center;
@@ -54,38 +54,20 @@ ui <- page_navbar(
         )
       ),
       card(#this card contains the majority of the introductory text
-        card_header(h1("Instructions")),
-        h3("Introduction:"),
+        card_header(h1("Welcome")),
         p(
-          "This tool has been developed to allow the easy download of AIMS (Australian Institute of Marine Science) MMP (Marine Monitoring 
-          Program) water quality data, specifically logger data. The data are stored on a THREDDS server in the netCDF 
-          format, and require specific processing steps to access properly."
+          'This tool has been developed to allow the easy download of AIMS MMP water quality logger data. The 
+          main tool is found under the "Data Access" tab. Data are stored on a THREDDS server in the netCDF format 
+          and require specific processing steps to access properly. These steps are explained in detail below.'
         ),
-        p(
-          "On the second page of this app you can find a user interface that will allow you to conduct a preliminary exploration of the
-          AIMS MPP water quality data. In the user interface you can:"
-        ),
-        tags$ul(
-          tags$li("Select data by year,"),
-          tags$li("Select data by logger,"),
-          tags$li("Filter data by quality code,"),
-          tags$li("Return data in 10 minute intervals or as daily averages,"),
-          tags$li("Visualise data on an interactive lineplot and interactive map, and"),
-          tags$li("Download selected data as a CSV")
-        ),
-        h3("Additional Resources:"),
         p(
           "There are several additional resources reccomended should you wish to learn more about the methods or data.
           Please note that these resources are", tags$b("not"), "required to access or use the data:"
         ),
         tags$ul(
-          tags$li("A document detailing R methods can be found here: ", tags$a(href = "n3_water-quality_new-mmp-data.html", target = "_blank", "Data Access Methods."),"This includes:",
-            tags$ul(
-              tags$li("How to find data,"),
-              tags$li("Methods to learn about data type and quality,"),
-              tags$li("How to automatically extract data, and"),
-              tags$li("How to conduct preliminary analyis"),
-            )
+          tags$li(
+            "A document detailing R methods can be found here: ", 
+            tags$a(href = "n3_water-quality_new-mmp-data.html", target = "_blank", "Data Access Methods."),            
           ),          
           tags$li("An introduction to the netCDF file type can be found here:", 
             tags$a(href = "https://www.unidata.ucar.edu/software/netcdf/", "Unidata | NetCDF")
@@ -97,7 +79,42 @@ ui <- page_navbar(
             tags$a(href = "https://thredds.aodn.org.au/thredds/catalog/AIMS/catalog.html", "AODN AIMS THREDDS Catalogue"))
         )
       ),
-      col_widths = c(6,6)
+      card(#this card contains specific instructions on using the tool
+        layout_columns(
+          card(
+            card_header(h5("1: Select Year(s)")),
+            p("Pick the year or years of data you wish to visualise and download. Increasing the number of years 
+            will increase the processing time.")
+          ),
+          card(
+            card_header(h5("2: Select Logger(s)")),
+            p("Pick the logger or loggers you wish to visualise and download. Increasing the number of loggers 
+            will increase the processing time.")
+          ),
+          card(
+            card_header(h5("3: Request Data")),
+            p(strong("Manually"), 'click the "Send Request:" button. A pop-up will appear informing you of the
+            progress.')
+          ),
+          card(
+            card_header(h5("4: Visualise Data")),
+            p("Data will be automatically visualised. You can interact with these visuals and adjust specific 
+            parameters (see next).")
+          ),
+          card(
+            card_header(h5("5: Flags and Aggregation")),
+            p("Adjust the data quality flags to filter by data qualit (flags 1 and 2 reccomended). Adjust the 
+            aggregation to present data as daily mean values, or as 10-minute intervals.")
+          ),
+          card(
+            card_header(h5("6: Download Data")),
+            p("Downloaded data using the button at the bottom right of the page. NOTE: There is
+            currently a download size limit; 1 logger 1 year with 10-minute data, or several loggers/years with daily mean data.")
+          ),
+          col_widths = c(2,2,2,2,2,2)
+        )
+      ),
+      col_widths = c(3,9, 12)
     )
   ),
 
